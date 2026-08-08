@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 
+const N8N_WEBHOOK_URL = 'https://inju7890.app.n8n.cloud/webhook-test/dental-booking';
+
 export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [selectedService, setSelectedService] = useState(initialService || 'General Checkup & Cleaning');
   const [selectedDoctor, setSelectedDoctor] = useState('Dr. Sarah Jenkins (Lead Specialist)');
   const [selectedDate, setSelectedDate] = useState('2026-08-10');
   const [selectedTime, setSelectedTime] = useState('10:30 AM');
-  
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -13,7 +15,10 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
     notes: '',
   });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [confirmationCode] = useState(() => `SC-${Math.floor(100000 + Math.random() * 900000)}`);
 
   if (!isOpen) return null;
 
@@ -36,20 +41,59 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
     '09:00 AM', '10:30 AM', '01:30 PM', '03:00 PM', '04:30 PM'
   ];
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsSubmitted(true);
+    setIsSubmitting(true);
+    setSubmitError('');
+
+    const payload = {
+      confirmation_code: confirmationCode,
+      patient_name: formData.name,
+      patient_email: formData.email,
+      patient_phone: formData.phone,
+      notes: formData.notes,
+      service: selectedService,
+      doctor: selectedDoctor,
+      date: selectedDate,
+      time: selectedTime,
+      submitted_at: new Date().toISOString(),
+    };
+
+    try {
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+      }
+
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error('Booking submission error:', err);
+      setSubmitError(
+        'We could not submit your booking right now. Please try again or call us directly at (555) 123-4567.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReset = () => {
     setIsSubmitted(false);
+    setSubmitError('');
+    setFormData({ name: '', phone: '', email: '', notes: '' });
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#131b2e]/60 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#131b2e]/60 backdrop-blur-md">
       <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-white/60 relative overflow-hidden max-h-[90vh] overflow-y-auto">
-        
+
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -76,7 +120,7 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              
+
               {/* Select Service */}
               <div>
                 <label className="block text-xs font-bold text-[#131b2e] mb-1.5">
@@ -185,16 +229,52 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
                     />
                   </div>
                 </div>
+
+                {/* Notes (optional) */}
+                <div>
+                  <label className="block text-xs font-bold text-[#131b2e] mb-1">
+                    Notes / Special Requests <span className="text-[#6e7881] font-normal">(optional)</span>
+                  </label>
+                  <textarea
+                    placeholder="Any allergies, concerns, or special requirements..."
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={2}
+                    className="input-field w-full px-3.5 py-2.5 rounded-xl text-sm text-[#131b2e] resize-none"
+                  />
+                </div>
               </div>
+
+              {/* Error Message */}
+              {submitError && (
+                <div className="flex items-start gap-2.5 bg-[#ffdad6] border border-[#ba1a1a]/30 p-3.5 rounded-xl text-xs text-[#93000a]">
+                  <span className="material-symbols-outlined text-base text-[#ba1a1a] shrink-0">error</span>
+                  <span>{submitError}</span>
+                </div>
+              )}
 
               {/* Submit CTA */}
               <div className="pt-4">
                 <button
                   type="submit"
-                  className="btn-primary w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="btn-primary w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  <span className="material-symbols-outlined text-lg">check_circle</span>
-                  <span>Confirm Appointment</span>
+                  {isSubmitting ? (
+                    <>
+                      {/* Spinner */}
+                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                      <span>Booking your appointment...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-lg">check_circle</span>
+                      <span>Confirm Appointment</span>
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -211,17 +291,19 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
               Appointment Confirmed!
             </h3>
             <p className="text-xs text-[#3e4850] mt-2 max-w-sm mx-auto">
-              Thank you, <strong className="text-[#006591]">{formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{selectedService}</strong> has been successfully registered.
+              Thank you, <strong className="text-[#006591]">{formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{selectedService}</strong> has been successfully submitted to our team.
             </p>
 
             <div className="bg-[#f2f3ff] p-4 rounded-2xl text-xs text-left my-6 border border-[#dae2fd] space-y-1.5">
               <p><span className="font-semibold text-[#6e7881]">Date & Time:</span> {selectedDate} at {selectedTime}</p>
               <p><span className="font-semibold text-[#6e7881]">Doctor:</span> {selectedDoctor}</p>
-              <p><span className="font-semibold text-[#6e7881]">Confirmation Code:</span> <code className="bg-white px-2 py-0.5 rounded text-[#006591] font-bold">SC-{Math.floor(100000 + Math.random() * 900000)}</code></p>
+              <p><span className="font-semibold text-[#6e7881]">Confirmation Code:</span>{' '}
+                <code className="bg-white px-2 py-0.5 rounded text-[#006591] font-bold">{confirmationCode}</code>
+              </p>
             </div>
 
             <p className="text-[11px] text-[#6e7881] mb-6">
-              A SMS and email confirmation with clinic directions has been sent to your contact details.
+              Our team will review your request and send a confirmation to <strong>{formData.email}</strong> within 1 hour.
             </p>
 
             <button
