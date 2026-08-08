@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const N8N_WEBHOOK_URL = 'https://inju7890.app.n8n.cloud/webhook-test/dental-booking';
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://inju7890.app.n8n.cloud/webhook-test/dental-booking';
 
 export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [selectedService, setSelectedService] = useState(initialService || 'General Checkup & Cleaning');
@@ -18,7 +18,7 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [confirmationCode] = useState(() => `SC-${Math.floor(100000 + Math.random() * 900000)}`);
+  const [confirmedData, setConfirmedData] = useState(null);
 
   if (!isOpen) return null;
 
@@ -43,41 +43,92 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.name.trim() || !formData.phone.trim() || !formData.email.trim()) {
+      setSubmitError('Please fill in all required fields.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email.trim())) {
+      setSubmitError('Please enter a valid email address.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError('');
 
     const payload = {
-      confirmation_code: confirmationCode,
-      patient_name: formData.name,
-      patient_email: formData.email,
-      patient_phone: formData.phone,
-      notes: formData.notes,
+      patientName: formData.name.trim(),
+      patientPhone: formData.phone.trim(),
+      patientEmail: formData.email.trim(),
       service: selectedService,
       doctor: selectedDoctor,
-      date: selectedDate,
-      time: selectedTime,
-      submitted_at: new Date().toISOString(),
+      appointmentDate: selectedDate,
+      appointmentTime: selectedTime,
+      notes: formData.notes.trim(),
     };
 
     try {
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      let response = null;
+      let data = null;
 
-      if (!response.ok) {
-        throw new Error(`Server responded with status ${response.status}`);
+      // 1. Try primary configured Webhook URL
+      try {
+        response = await fetch(N8N_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        if (response.ok) {
+          data = await response.json().catch(() => null);
+        }
+      } catch (primaryFetchErr) {
+        response = null;
       }
 
-      setIsSubmitted(true);
+      // 2. If primary URL failed or returned non-200 (e.g. 404 test mode inactive), try alternate (production/test) URL
+      if (!response || !response.ok || !data) {
+        const alternateUrl = N8N_WEBHOOK_URL.includes('/webhook-test/')
+          ? N8N_WEBHOOK_URL.replace('/webhook-test/', '/webhook/')
+          : N8N_WEBHOOK_URL.replace('/webhook/', '/webhook-test/');
+
+        try {
+          const altResponse = await fetch(alternateUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+          const altData = await altResponse.json().catch(() => null);
+
+          if (altResponse.ok && altData) {
+            response = altResponse;
+            data = altData;
+          } else if (altData && altData.message) {
+            data = altData;
+            response = altResponse;
+          }
+        } catch (altFetchErr) {
+          // Both fetches failed
+        }
+      }
+
+      if (response && response.ok && data && data.success === true) {
+        setConfirmedData(data);
+        setIsSubmitted(true);
+      } else {
+        const errorMsg =
+          data?.message ||
+          "Sorry, we couldn't confirm this appointment. Please try another time or contact the clinic.";
+        setSubmitError(errorMsg);
+      }
     } catch (err) {
       console.error('Booking submission error:', err);
-      setSubmitError(
-        'We could not submit your booking right now. Please try again or call us directly at (555) 123-4567.'
-      );
+      setSubmitError("We couldn't connect to the booking system. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -86,6 +137,7 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const handleReset = () => {
     setIsSubmitted(false);
     setSubmitError('');
+    setConfirmedData(null);
     setFormData({ name: '', phone: '', email: '', notes: '' });
     onClose();
   };
@@ -267,7 +319,7 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                       </svg>
-                      <span>Booking your appointment...</span>
+                      <span>Confirming Appointment...</span>
                     </>
                   ) : (
                     <>
@@ -291,19 +343,30 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
               Appointment Confirmed!
             </h3>
             <p className="text-xs text-[#3e4850] mt-2 max-w-sm mx-auto">
-              Thank you, <strong className="text-[#006591]">{formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{selectedService}</strong> has been successfully submitted to our team.
+              Thank you, <strong className="text-[#006591]">{confirmedData?.appointment?.patientName || formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{confirmedData?.appointment?.service || selectedService}</strong> has been successfully confirmed.
             </p>
 
             <div className="bg-[#f2f3ff] p-4 rounded-2xl text-xs text-left my-6 border border-[#dae2fd] space-y-1.5">
-              <p><span className="font-semibold text-[#6e7881]">Date & Time:</span> {selectedDate} at {selectedTime}</p>
-              <p><span className="font-semibold text-[#6e7881]">Doctor:</span> {selectedDoctor}</p>
-              <p><span className="font-semibold text-[#6e7881]">Confirmation Code:</span>{' '}
-                <code className="bg-white px-2 py-0.5 rounded text-[#006591] font-bold">{confirmationCode}</code>
+              <p>
+                <span className="font-semibold text-[#6e7881]">Date & Time:</span>{' '}
+                {confirmedData?.appointment?.date || selectedDate} at {confirmedData?.appointment?.time || selectedTime}
               </p>
+              <p>
+                <span className="font-semibold text-[#6e7881]">Doctor:</span>{' '}
+                {confirmedData?.appointment?.doctor || selectedDoctor}
+              </p>
+              {(confirmedData?.bookingId || confirmedData?.confirmationCode || confirmedData?.id || confirmedData?.appointment?.id) && (
+                <p>
+                  <span className="font-semibold text-[#6e7881]">Confirmation Code:</span>{' '}
+                  <code className="bg-white px-2 py-0.5 rounded text-[#006591] font-bold">
+                    {confirmedData?.bookingId || confirmedData?.confirmationCode || confirmedData?.id || confirmedData?.appointment?.id}
+                  </code>
+                </p>
+              )}
             </div>
 
             <p className="text-[11px] text-[#6e7881] mb-6">
-              Our team will review your request and send a confirmation to <strong>{formData.email}</strong> within 1 hour.
+              Our team will review your request and send a confirmation to <strong>{confirmedData?.appointment?.patientEmail || formData.email}</strong>.
             </p>
 
             <button
