@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://inju7890.app.n8n.cloud/webhook-test/dental-booking';
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://inju7890.app.n8n.cloud/webhook/dental-booking';
 
 export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [selectedService, setSelectedService] = useState(initialService || 'General Checkup & Cleaning');
@@ -70,54 +70,22 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
     };
 
     try {
-      let response = null;
-      let data = null;
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
 
-      // 1. Try primary configured Webhook URL
+      let data;
       try {
-        response = await fetch(N8N_WEBHOOK_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-        if (response.ok) {
-          data = await response.json().catch(() => null);
-        }
-      } catch (primaryFetchErr) {
-        response = null;
+        data = await response.json();
+      } catch (jsonErr) {
+        data = null;
       }
 
-      // 2. If primary URL failed or returned non-200 (e.g. 404 test mode inactive), try alternate (production/test) URL
-      if (!response || !response.ok || !data) {
-        const alternateUrl = N8N_WEBHOOK_URL.includes('/webhook-test/')
-          ? N8N_WEBHOOK_URL.replace('/webhook-test/', '/webhook/')
-          : N8N_WEBHOOK_URL.replace('/webhook/', '/webhook-test/');
-
-        try {
-          const altResponse = await fetch(alternateUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-          });
-          const altData = await altResponse.json().catch(() => null);
-
-          if (altResponse.ok && altData) {
-            response = altResponse;
-            data = altData;
-          } else if (altData && altData.message) {
-            data = altData;
-            response = altResponse;
-          }
-        } catch (altFetchErr) {
-          // Both fetches failed
-        }
-      }
-
-      if (response && response.ok && data && data.success === true) {
+      if (response.ok && data && data.success === true) {
         setConfirmedData(data);
         setIsSubmitted(true);
       } else {
