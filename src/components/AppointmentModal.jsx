@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://inju7890.app.n8n.cloud/webhook/dental-booking';
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://mdhind7860.app.n8n.cloud/webhook-test/dental-website';
 
 export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [selectedService, setSelectedService] = useState(initialService || 'General Checkup & Cleaning');
@@ -62,10 +62,16 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
       patientName: formData.name.trim(),
       patientPhone: formData.phone.trim(),
       patientEmail: formData.email.trim(),
+      name: formData.name.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email.trim(),
       service: selectedService,
+      treatment: selectedService,
       doctor: selectedDoctor,
       appointmentDate: selectedDate,
       appointmentTime: selectedTime,
+      date: selectedDate,
+      time: selectedTime,
       notes: formData.notes.trim(),
     };
 
@@ -81,16 +87,20 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
       let data;
       try {
         data = await response.json();
+        if (Array.isArray(data)) {
+          data = data[0] || {};
+        }
       } catch (jsonErr) {
         data = null;
       }
 
-      if (response.ok && data && data.success === true) {
-        setConfirmedData(data);
+      if (response.ok && (!data || data.success !== false)) {
+        setConfirmedData(data || { appointment: payload });
         setIsSubmitted(true);
       } else {
         const errorMsg =
           data?.message ||
+          data?.error ||
           "Sorry, we couldn't confirm this appointment. Please try another time or contact the clinic.";
         setSubmitError(errorMsg);
       }
@@ -311,17 +321,17 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
               Appointment Confirmed!
             </h3>
             <p className="text-xs text-[#3e4850] mt-2 max-w-sm mx-auto">
-              Thank you, <strong className="text-[#006591]">{confirmedData?.appointment?.patientName || formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{confirmedData?.appointment?.service || selectedService}</strong> has been successfully confirmed.
+              Thank you, <strong className="text-[#006591]">{confirmedData?.appointment?.patientName || confirmedData?.patientName || confirmedData?.name || formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{confirmedData?.appointment?.service || confirmedData?.service || confirmedData?.treatment || selectedService}</strong> has been successfully confirmed.
             </p>
 
             <div className="bg-[#f2f3ff] p-4 rounded-2xl text-xs text-left my-6 border border-[#dae2fd] space-y-1.5">
               <p>
                 <span className="font-semibold text-[#6e7881]">Date & Time:</span>{' '}
-                {confirmedData?.appointment?.date || selectedDate} at {confirmedData?.appointment?.time || selectedTime}
+                {confirmedData?.appointment?.date || confirmedData?.appointmentDate || confirmedData?.date || selectedDate} at {confirmedData?.appointment?.time || confirmedData?.appointmentTime || confirmedData?.time || selectedTime}
               </p>
               <p>
                 <span className="font-semibold text-[#6e7881]">Doctor:</span>{' '}
-                {confirmedData?.appointment?.doctor || selectedDoctor}
+                {confirmedData?.appointment?.doctor || confirmedData?.doctor || selectedDoctor}
               </p>
               {(confirmedData?.bookingId || confirmedData?.confirmationCode || confirmedData?.id || confirmedData?.appointment?.id) && (
                 <p>
@@ -334,7 +344,7 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
             </div>
 
             <p className="text-[11px] text-[#6e7881] mb-6">
-              Our team will review your request and send a confirmation to <strong>{confirmedData?.appointment?.patientEmail || formData.email}</strong>.
+              Our team will review your request and send a confirmation to <strong>{confirmedData?.appointment?.patientEmail || confirmedData?.patientEmail || confirmedData?.email || formData.email}</strong>.
             </p>
 
             <button
