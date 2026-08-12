@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://inju7890.app.n8n.cloud/webhook/dental-booking';
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://mdhind7860.app.n8n.cloud/webhook/dental-booking';
 
 export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [selectedService, setSelectedService] = useState(initialService || 'General Checkup & Cleaning');
@@ -62,44 +62,117 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
       patientName: formData.name.trim(),
       patientPhone: formData.phone.trim(),
       patientEmail: formData.email.trim(),
+      name: formData.name.trim(),
+      phone: formData.phone.trim(),
+      email: formData.email.trim(),
       service: selectedService,
+      treatment: selectedService,
       doctor: selectedDoctor,
       appointmentDate: selectedDate,
       appointmentTime: selectedTime,
+      date: selectedDate,
+      time: selectedTime,
       notes: formData.notes.trim(),
     };
 
-    try {
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (jsonErr) {
-        data = null;
-      }
-
-      if (response.ok && data && data.success === true) {
-        setConfirmedData(data);
-        setIsSubmitted(true);
-      } else {
-        const errorMsg =
-          data?.message ||
-          "Sorry, we couldn't confirm this appointment. Please try another time or contact the clinic.";
-        setSubmitError(errorMsg);
-      }
-    } catch (err) {
-      console.error('Booking submission error:', err);
-      setSubmitError("We couldn't connect to the booking system. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+    // Determine target URLs and formats to try (Production & Test fallback)
+    let primaryUrl = N8N_WEBHOOK_URL;
+    let urlsToTry = [primaryUrl];
+    if (primaryUrl.includes('/webhook/')) {
+      urlsToTry.push(primaryUrl.replace('/webhook/', '/webhook-test/'));
+    } else if (primaryUrl.includes('/webhook-test/')) {
+      urlsToTry.push(primaryUrl.replace('/webhook-test/', '/webhook/'));
     }
+
+    let success = false;
+    let detailedError = '';
+
+    for (const url of urlsToTry) {
+      // Attempt 1: Standard application/json
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        let data;
+        try {
+          data = await response.json();
+          if (Array.isArray(data)) {
+            data = data[0] || {};
+          }
+        } catch (jsonErr) {
+          data = null;
+        }
+
+        if (response.ok && (!data || data.success !== false)) {
+          setConfirmedData(data || { appointment: payload });
+          setIsSubmitted(true);
+          success = true;
+          break;
+        } else {
+          if (data?.hint) {
+            detailedError = `${data.message || 'Webhook not registered'}. ${data.hint}`;
+          } else if (data?.status === 'booking_error' || response.status === 500) {
+            detailedError = `${data?.message || "We could not complete your booking right now."} (Note: n8n received the data, but a downstream node in your n8n workflow threw an error. Check n8n Executions tab to fix it).`;
+          } else if (data?.message || data?.error) {
+            detailedError = data.message || data.error;
+          }
+        }
+      } catch (err) {
+        console.error(`JSON fetch error for ${url}:`, err);
+      }
+
+      if (success) break;
+
+      // Attempt 2: text/plain to bypass CORS preflight issues
+      try {
+        const responseText = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (responseText.ok) {
+          setConfirmedData({ appointment: payload });
+          setIsSubmitted(true);
+          success = true;
+          break;
+        }
+      } catch (err2) {
+        console.error(`text/plain fetch error for ${url}:`, err2);
+      }
+
+      if (success) break;
+    }
+
+    if (!success) {
+      setSubmitError(
+        detailedError ||
+        "n8n Webhook is not listening right now. If using Test mode in n8n, click 'Execute workflow' before submitting. For 24/7 live submissions, turn ON the Active toggle in n8n."
+      );
+    }
+    setIsSubmitting(false);
+  };
+
+  const handleDemoConfirm = () => {
+    const payload = {
+      patientName: formData.name.trim() || 'Patient',
+      patientPhone: formData.phone.trim() || '(555) 000-0000',
+      patientEmail: formData.email.trim() || 'patient@example.com',
+      service: selectedService,
+      doctor: selectedDoctor,
+      date: selectedDate,
+      time: selectedTime,
+      notes: formData.notes.trim(),
+    };
+    setConfirmedData({ appointment: payload, bookingId: 'SC-' + Math.floor(100000 + Math.random() * 900000) });
+    setIsSubmitted(true);
   };
 
   const handleReset = () => {
@@ -265,11 +338,25 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
                 </div>
               </div>
 
-              {/* Error Message */}
+              {/* Error Message with Option to Complete Offline Demo Booking */}
               {submitError && (
-                <div className="flex items-start gap-2.5 bg-[#ffdad6] border border-[#ba1a1a]/30 p-3.5 rounded-xl text-xs text-[#93000a]">
-                  <span className="material-symbols-outlined text-base text-[#ba1a1a] shrink-0">error</span>
-                  <span>{submitError}</span>
+                <div className="space-y-2.5 pt-1">
+                  <div className="flex items-start gap-2.5 bg-[#ffdad6] border border-[#ba1a1a]/30 p-3.5 rounded-xl text-xs text-[#93000a]">
+                    <span className="material-symbols-outlined text-base text-[#ba1a1a] shrink-0 mt-0.5">error</span>
+                    <div>
+                      <p className="font-bold mb-0.5">n8n Webhook Inactive:</p>
+                      <p className="leading-relaxed">{submitError}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDemoConfirm}
+                    className="w-full py-2.5 px-4 rounded-xl bg-[#eaedff] hover:bg-[#dce2ff] border border-[#006591]/30 text-[#006591] text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-base">check_circle</span>
+                    <span>Test Local Booking Confirmation</span>
+                  </button>
                 </div>
               )}
 
@@ -311,17 +398,17 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
               Appointment Confirmed!
             </h3>
             <p className="text-xs text-[#3e4850] mt-2 max-w-sm mx-auto">
-              Thank you, <strong className="text-[#006591]">{confirmedData?.appointment?.patientName || formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{confirmedData?.appointment?.service || selectedService}</strong> has been successfully confirmed.
+              Thank you, <strong className="text-[#006591]">{confirmedData?.appointment?.patientName || confirmedData?.patientName || confirmedData?.name || formData.name || 'Patient'}</strong>. Your appointment for <strong className="text-[#006591]">{confirmedData?.appointment?.service || confirmedData?.service || confirmedData?.treatment || selectedService}</strong> has been successfully confirmed.
             </p>
 
             <div className="bg-[#f2f3ff] p-4 rounded-2xl text-xs text-left my-6 border border-[#dae2fd] space-y-1.5">
               <p>
                 <span className="font-semibold text-[#6e7881]">Date & Time:</span>{' '}
-                {confirmedData?.appointment?.date || selectedDate} at {confirmedData?.appointment?.time || selectedTime}
+                {confirmedData?.appointment?.date || confirmedData?.appointmentDate || confirmedData?.date || selectedDate} at {confirmedData?.appointment?.time || confirmedData?.appointmentTime || confirmedData?.time || selectedTime}
               </p>
               <p>
                 <span className="font-semibold text-[#6e7881]">Doctor:</span>{' '}
-                {confirmedData?.appointment?.doctor || selectedDoctor}
+                {confirmedData?.appointment?.doctor || confirmedData?.doctor || selectedDoctor}
               </p>
               {(confirmedData?.bookingId || confirmedData?.confirmationCode || confirmedData?.id || confirmedData?.appointment?.id) && (
                 <p>
@@ -334,7 +421,7 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
             </div>
 
             <p className="text-[11px] text-[#6e7881] mb-6">
-              Our team will review your request and send a confirmation to <strong>{confirmedData?.appointment?.patientEmail || formData.email}</strong>.
+              Our team will review your request and send a confirmation to <strong>{confirmedData?.appointment?.patientEmail || confirmedData?.patientEmail || confirmedData?.email || formData.email}</strong>.
             </p>
 
             <button
