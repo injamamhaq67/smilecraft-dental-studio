@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://mdhind7860.app.n8n.cloud/webhook-test/dental-website';
+const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || 'https://mdhind7860.app.n8n.cloud/webhook-test/dental-booking';
 
 export default function AppointmentModal({ isOpen, onClose, initialService }) {
   const [selectedService, setSelectedService] = useState(initialService || 'General Checkup & Cleaning');
