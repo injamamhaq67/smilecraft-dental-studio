@@ -75,47 +75,60 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
       notes: formData.notes.trim(),
     };
 
-    try {
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      let data;
-      try {
-        data = await response.json();
-        if (Array.isArray(data)) {
-          data = data[0] || {};
-        }
-      } catch (jsonErr) {
-        data = null;
-      }
-
-      if (response.ok && (!data || data.success !== false)) {
-        setConfirmedData(data || { appointment: payload });
-        setIsSubmitted(true);
-      } else {
-        let errorMsg =
-          data?.message ||
-          data?.error ||
-          "Sorry, we couldn't confirm this appointment right now. Please try again or contact the clinic directly.";
-        
-        if (typeof errorMsg === 'string' && (errorMsg.includes('not registered') || errorMsg.includes('webhook'))) {
-          errorMsg = "n8n Webhook connection note: If using the TEST webhook URL, click 'Test workflow' in your n8n canvas before submitting. If using PRODUCTION, activate your n8n workflow and update the URL to /webhook/dental-booking.";
-        }
-        setSubmitError(errorMsg);
-      }
-    } catch (err) {
-      console.error('Booking submission error:', err);
-      setSubmitError(
-        "Could not connect to the n8n webhook. If using the TEST webhook URL, please click 'Test workflow' in n8n first. If using production, ensure the workflow is toggled Active."
-      );
-    } finally {
-      setIsSubmitting(false);
+    // Determine target URLs (try configured URL first; if test URL fails, fallback to production URL)
+    let primaryUrl = N8N_WEBHOOK_URL;
+    let urlsToTry = [primaryUrl];
+    if (primaryUrl.includes('/webhook-test/')) {
+      urlsToTry.push(primaryUrl.replace('/webhook-test/', '/webhook/'));
     }
+
+    let success = false;
+    let detailedError = '';
+
+    for (const url of urlsToTry) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        let data;
+        try {
+          data = await response.json();
+          if (Array.isArray(data)) {
+            data = data[0] || {};
+          }
+        } catch (jsonErr) {
+          data = null;
+        }
+
+        if (response.ok && (!data || data.success !== false)) {
+          setConfirmedData(data || { appointment: payload });
+          setIsSubmitted(true);
+          success = true;
+          break;
+        } else {
+          if (data?.hint) {
+            detailedError = `${data.message || 'Webhook not registered'}. ${data.hint}`;
+          } else if (data?.message || data?.error) {
+            detailedError = data.message || data.error;
+          }
+        }
+      } catch (err) {
+        console.error(`Booking submission error for ${url}:`, err);
+      }
+    }
+
+    if (!success) {
+      setSubmitError(
+        detailedError ||
+        "n8n Webhook is not listening right now. If using Test mode, click 'Execute workflow' in n8n before submitting. For 24/7 live submissions, turn ON the Active toggle in n8n."
+      );
+    }
+    setIsSubmitting(false);
   };
 
   const handleReset = () => {
