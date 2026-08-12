@@ -98,15 +98,21 @@ export default function AppointmentModal({ isOpen, onClose, initialService }) {
         setConfirmedData(data || { appointment: payload });
         setIsSubmitted(true);
       } else {
-        const errorMsg =
+        let errorMsg =
           data?.message ||
           data?.error ||
-          "Sorry, we couldn't confirm this appointment. Please try another time or contact the clinic.";
+          "Sorry, we couldn't confirm this appointment right now. Please try again or contact the clinic directly.";
+        
+        if (typeof errorMsg === 'string' && (errorMsg.includes('not registered') || errorMsg.includes('webhook'))) {
+          errorMsg = "n8n Webhook connection note: If using the TEST webhook URL, click 'Test workflow' in your n8n canvas before submitting. If using PRODUCTION, activate your n8n workflow and update the URL to /webhook/dental-booking.";
+        }
         setSubmitError(errorMsg);
       }
     } catch (err) {
       console.error('Booking submission error:', err);
-      setSubmitError("We couldn't connect to the booking system. Please try again.");
+      setSubmitError(
+        "Could not connect to the n8n webhook. If using the TEST webhook URL, please click 'Test workflow' in n8n first. If using production, ensure the workflow is toggled Active."
+      );
     } finally {
       setIsSubmitting(false);
     }
